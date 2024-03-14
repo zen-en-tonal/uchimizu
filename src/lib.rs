@@ -33,15 +33,23 @@ pub struct Policy {
     evaporation_cost: u32,
 }
 
-pub fn new_policy(initial_amount: u32, pour_cost: u32, evaporation_cost: u32) -> Policy {
-    Policy {
-        initial_amount,
-        pour_cost,
-        evaporation_cost,
-    }
-}
-
 impl Policy {
+    pub fn new(initial_amount: u32, pour_cost: u32, evaporation_cost: u32) -> Policy {
+        Policy {
+            initial_amount,
+            pour_cost,
+            evaporation_cost,
+        }
+    }
+
+    pub fn expire_within(secs: u32) -> Policy {
+        Policy {
+            initial_amount: secs,
+            pour_cost: 0,
+            evaporation_cost: 1,
+        }
+    }
+
     fn is_remaining(&self, hit_count: usize, duration: Duration) -> bool {
         let pour_amount = self.pour_cost * hit_count as u32;
         let evaporation_amount = self.evaporation_cost * duration_secs(duration) as u32;
@@ -132,7 +140,7 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let mut b = new_policy(100, 10, 50).into_bucket();
+        let mut b = Policy::new(100, 10, 50).into_bucket();
         for _ in 0..2 {
             println!(
                 "{:?}",
