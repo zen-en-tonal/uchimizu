@@ -3,7 +3,8 @@
     "rust-analyzer.check.features": "all",
     "rust-analyzer.check.overrideCommand": [
         "cargo",
-        "clippy",
-        "--message-format=json"
+        "check",
+        "--message-format=json",
+        "--tests"
     ]
 }

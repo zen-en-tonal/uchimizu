@@ -193,8 +193,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
-
     use super::*;
 
     #[test]
