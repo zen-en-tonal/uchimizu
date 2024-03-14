@@ -1,0 +1,10 @@
+version: '3'
+
+services:
+  rust:
+    build: .
+    restart: unless-stoped
+    tty: true
+    volumes:
+      - ../:/workspace
+    working_dir: /workspece
