@@ -15,11 +15,11 @@ fn now() -> Instant {
     return chrono::Utc::now();
 }
 
-fn duration_secs(d: Duration) -> i64 {
+fn duration_secs(d: Duration) -> u32 {
     #[cfg(not(feature = "serde"))]
-    return d.as_secs() as i64;
+    return d.as_secs().try_into().unwrap();
     #[cfg(feature = "serde")]
-    return d.num_seconds();
+    return d.num_seconds().try_into().unwrap();
 }
 
 #[cfg_attr(not(feature = "serde"), derive(Debug, Clone, PartialEq, Eq))]
@@ -42,7 +42,67 @@ impl Policy {
         }
     }
 
-    pub fn expire_within(secs: u32) -> Policy {
+    /// # Example
+    /// ```
+    /// use uchimizu::Policy;
+    ///
+    /// let p = Policy::bottom_less();
+    /// assert!(p.is_remaining(0, 0));
+    /// assert!(p.is_remaining(0, 1));
+    /// assert!(p.is_remaining(1, 1));
+    /// ```
+    pub fn bottom_less() -> Policy {
+        Policy {
+            initial_amount: 1,
+            pour_cost: 0,
+            evaporation_cost: 0,
+        }
+    }
+
+    /// # Example
+    /// ```
+    /// use uchimizu::Policy;
+    ///
+    /// let p = Policy::pierced();
+    /// assert!(!p.is_remaining(0, 0));
+    /// assert!(!p.is_remaining(0, 1));
+    /// assert!(!p.is_remaining(1, 1));
+    /// ```
+    pub fn pierced() -> Policy {
+        Policy {
+            initial_amount: 0,
+            pour_cost: 1,
+            evaporation_cost: 1,
+        }
+    }
+
+    /// # Example
+    /// ```
+    /// use uchimizu::Policy;
+    ///
+    /// let p = Policy::expire_within_counts(5);
+    /// assert!(p.is_remaining(4, 1000));
+    /// assert!(!p.is_remaining(5, 1000));
+    /// assert!(!p.is_remaining(6, 1000));
+    /// ```
+    pub fn expire_within_counts(count: u32) -> Policy {
+        Policy {
+            initial_amount: count,
+            pour_cost: 1,
+            evaporation_cost: 0,
+        }
+    }
+
+    /// # Example
+    /// ```
+    /// use uchimizu::Policy;
+    ///
+    /// let p = Policy::expire_within_secs(5);
+    /// assert!(p.is_remaining(1000, 4));
+    /// assert!(!p.is_remaining(1000, 5));
+    /// assert!(!p.is_remaining(1000, 6));
+    /// ```
+    pub fn expire_within_secs(secs: u32) -> Policy {
         Policy {
             initial_amount: secs,
             pour_cost: 0,
@@ -50,9 +110,9 @@ impl Policy {
         }
     }
 
-    fn is_remaining(&self, hit_count: usize, duration: Duration) -> bool {
+    pub fn is_remaining(&self, hit_count: usize, duration_secs: u32) -> bool {
         let pour_amount = self.pour_cost * hit_count as u32;
-        let evaporation_amount = self.evaporation_cost * duration_secs(duration) as u32;
+        let evaporation_amount = self.evaporation_cost * duration_secs;
         pour_amount + evaporation_amount < self.initial_amount
     }
 
@@ -105,22 +165,21 @@ where
     where
         F: Task<T>,
     {
-        let duration = now() - self.initiate;
         match (
-            self.policy.is_remaining(self.hit_count, duration),
+            self.policy
+                .is_remaining(self.hit_count, duration_secs(now() - self.initiate)),
             self.cache.clone(),
         ) {
             (true, Some(c)) => {
                 self.hit_count += 1;
                 c
             }
-            (false, _) => {
+            (_, _) => {
                 self.refresh();
-                self.call(task)
-            }
-            (_, None) => {
-                self.cache = Some(task.call());
-                self.call(task)
+                self.hit_count += 1;
+                let entry = task.call();
+                self.cache = Some(entry.clone());
+                entry
             }
         }
     }
@@ -141,19 +200,30 @@ mod tests {
     #[test]
     fn it_works() {
         let mut b = Policy::new(100, 10, 50).into_bucket();
-        for _ in 0..2 {
-            println!(
-                "{:?}",
-                (
-                    b.call(|| {
-                        println!("called");
-                        now()
-                    }),
-                    b.hit_count,
-                    b.initiate
-                )
-            );
-            thread::sleep(std::time::Duration::from_millis(500));
-        }
+        b.call(|| now());
+    }
+
+    #[test]
+    fn bottom_less_works() {
+        let mut b = Policy::bottom_less().into_bucket();
+        b.call(|| now());
+    }
+
+    #[test]
+    fn pierced_works() {
+        let mut b = Policy::pierced().into_bucket();
+        b.call(|| now());
+    }
+
+    #[test]
+    fn expire_within_secs_works() {
+        let mut b = Policy::expire_within_secs(1).into_bucket();
+        b.call(|| now());
+    }
+
+    #[test]
+    fn expire_within_counts_works() {
+        let mut b = Policy::expire_within_counts(1).into_bucket();
+        b.call(|| now());
     }
 }
