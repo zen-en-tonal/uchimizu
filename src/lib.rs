@@ -22,8 +22,11 @@ fn duration_secs(d: Duration) -> i64 {
     return d.num_seconds();
 }
 
-#[cfg_attr(feature = "default", derive(Debug, Clone, PartialEq, Eq))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(not(feature = "serde"), derive(Debug, Clone, PartialEq, Eq))]
+#[cfg_attr(
+    feature = "serde",
+    derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)
+)]
 pub struct Policy {
     initial_amount: u32,
     pour_cost: u32,
