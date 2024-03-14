@@ -3,7 +3,7 @@ version: '3'
 services:
   rust:
     build: .
-    restart: unless-stoped
+    restart: unless-stopped
     tty: true
     volumes:
       - ../:/workspace
