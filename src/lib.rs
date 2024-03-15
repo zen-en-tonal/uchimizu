@@ -168,23 +168,21 @@ where
         F: Task<Fut>,
         Fut: Future<Output = T>,
     {
-        match (
+        let entry = match (
             self.policy
                 .is_remaining(self.hit_count, duration_secs(now() - self.initiate)),
             self.cache.clone(),
         ) {
-            (true, Some(c)) => {
-                self.hit_count += 1;
-                c
-            }
+            (true, Some(c)) => c,
             (_, _) => {
                 self.refresh();
-                self.hit_count += 1;
                 let entry = task.call().await;
                 self.cache = Some(entry.clone());
                 entry
             }
-        }
+        };
+        self.hit_count += 1;
+        entry
     }
 
     pub fn refresh(&mut self) {
