@@ -1,3 +1,5 @@
+use std::future::Future;
+
 #[cfg(not(feature = "serde"))]
 type Instant = std::time::Instant;
 #[cfg(feature = "serde")]
@@ -110,8 +112,8 @@ impl Policy {
         }
     }
 
-    pub fn is_remaining(&self, hit_count: usize, duration_secs: u32) -> bool {
-        let pour_amount = self.pour_cost * hit_count as u32;
+    pub fn is_remaining(&self, hit_count: u32, duration_secs: u32) -> bool {
+        let pour_amount = self.pour_cost * hit_count;
         let evaporation_amount = self.evaporation_cost * duration_secs;
         pour_amount + evaporation_amount < self.initial_amount
     }
@@ -134,7 +136,7 @@ impl Policy {
 pub struct Bucket<T> {
     cache: Option<T>,
     policy: Policy,
-    hit_count: usize,
+    hit_count: u32,
     initiate: Instant,
 }
 
@@ -161,9 +163,10 @@ impl<T> Bucket<T>
 where
     T: Clone,
 {
-    pub fn call<F>(&mut self, task: F) -> T
+    pub async fn call<F, Fut>(&mut self, task: F) -> T
     where
-        F: Task<T>,
+        F: Task<Fut>,
+        Fut: Future<Output = T>,
     {
         match (
             self.policy
@@ -177,7 +180,7 @@ where
             (_, _) => {
                 self.refresh();
                 self.hit_count += 1;
-                let entry = task.call();
+                let entry = task.call().await;
                 self.cache = Some(entry.clone());
                 entry
             }
@@ -195,33 +198,50 @@ where
 mod tests {
     use super::*;
 
-    #[test]
-    fn it_works() {
+    async fn wait_50_millis() {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await
+    }
+
+    #[tokio::test]
+    async fn it_works() {
         let mut b = Policy::new(100, 10, 50).into_bucket();
-        b.call(|| now());
+        b.call(wait_50_millis).await;
     }
 
-    #[test]
-    fn bottom_less_works() {
+    #[tokio::test]
+    async fn bottom_less_works() {
         let mut b = Policy::bottom_less().into_bucket();
-        b.call(|| now());
+        b.call(wait_50_millis).await;
     }
 
-    #[test]
-    fn pierced_works() {
+    #[tokio::test]
+    async fn pierced_works() {
         let mut b = Policy::pierced().into_bucket();
-        b.call(|| now());
+        b.call(wait_50_millis).await;
     }
 
-    #[test]
-    fn expire_within_secs_works() {
+    #[tokio::test]
+    async fn expire_within_secs_works() {
         let mut b = Policy::expire_within_secs(1).into_bucket();
-        b.call(|| now());
+        b.call(wait_50_millis).await;
     }
 
-    #[test]
-    fn expire_within_counts_works() {
+    #[tokio::test]
+    async fn expire_within_counts_works() {
         let mut b = Policy::expire_within_counts(1).into_bucket();
-        b.call(|| now());
+        b.call(wait_50_millis).await;
+    }
+
+    #[tokio::test]
+    async fn race() {
+        let mut b = Policy::expire_within_counts(3).into_bucket();
+        tokio::select! {
+            _ = tokio::spawn(async move {
+                b.call(wait_50_millis).await;
+                b.call(wait_50_millis).await;
+            }) => {}
+            _ = tokio::time::sleep(std::time::Duration::from_millis(75)) => panic!(),
+            else => panic!()
+        }
     }
 }
